@@ -1,6 +1,7 @@
 ﻿// Copyright CrystalVapor 2026, All rights reserved.
 
 #include "Components/CRRecoilSpreadComponent.h"
+#include "Engine/World.h"
 
 void UCRRecoilSpreadComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
