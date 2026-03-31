@@ -29,10 +29,10 @@ struct FRecoilPatternRandomizedRecoil
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Pattern")
 	FVector2D RandomXRange = FVector2D::ZeroVector;
 
-	UPROPERTY(EditAnywhere)
+	UPROPERTY(EditAnywhere, Category = "Pattern")
 	FVector2D RandomYRange = FVector2D::ZeroVector;
 };
 

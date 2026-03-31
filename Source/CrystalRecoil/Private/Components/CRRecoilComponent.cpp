@@ -2,6 +2,9 @@
 
 #include "Components/CRRecoilComponent.h"
 #include "Data/CRRecoilPattern.h"
+#include "Engine/World.h"
+#include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
 
 UCRRecoilComponent::UCRRecoilComponent()
 {
