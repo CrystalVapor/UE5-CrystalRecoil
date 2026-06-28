@@ -76,7 +76,7 @@ Call `UCRRecoilSpreadComponent::GetCurrentSpreadAngle()` before each shot to get
 
 ## Acknowledgements
 
-Huge thanks to @Solessfir for the massive overhaul in v2.0! His contributions significantly improved the architecture, physics model, and editor UX.
+Huge thanks to [Solessfir](https://github.com/Solessfir) for the massive overhaul in v2.0! His contributions significantly improved the architecture, physics model, and editor UX.
 
 ## License
 
