@@ -66,7 +66,7 @@ EGraphRenderingLOD::Type FCRRecoilUnitGraphBackgroundWidgetZoomLevelsContainer::
 void SCRRecoilUnitGraphBackgroundWidget::Construct(const FArguments& InArgs)
 {
 	// Use our custom zoom levels container
-	ZoomLevels = MakeUnique<FCRRecoilUnitGraphBackgroundWidgetZoomLevelsContainer>();
+	ZoomLevels = MakeShared<FCRRecoilUnitGraphBackgroundWidgetZoomLevelsContainer>();
 	SNodePanel::Construct();
 }
 
@@ -86,9 +86,4 @@ FVector2D SCRRecoilUnitGraphBackgroundWidget::GetZoomedAndCenterBasedViewOffset(
 int32 SCRRecoilUnitGraphBackgroundWidget::GetGridAxisStep() const
 {
 	return FMath::Max(1, FMath::CeilToInt(2.f / GetZoomAmount()));
-}
-
-void SCRRecoilUnitGraphBackgroundWidget::SetViewOffset(const FVector2D& Value)
-{
-	ViewOffset = Value;
 }

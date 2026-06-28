@@ -1,6 +1,8 @@
 ﻿// Copyright CrystalVapor 2026, All rights reserved.
 
 #include "Widget/CRRecoilUnitGraphEditor.h"
+#include "ScopedTransaction.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
 #include "Data/CRRecoilPattern.h"
 #include "Data/CRRecoilUnitGraph.h"
 #include "Editor/CRRecoilPatternEditor.h"
@@ -8,6 +10,9 @@
 #include "Widget/CRRecoilUnitGraphBackgroundWidget.h"
 #include "Misc/StringOutputDevice.h"
 #include "HAL/PlatformApplicationMisc.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Text/STextBlock.h"
 
 void SCRRecoilUnitGraphWidget::Construct(const FArguments& InArgs)
 {
@@ -231,7 +236,7 @@ void SCRRecoilUnitGraphWidget::ZoomToFitAllUnits() const
 
 	const float ActualZoom = BackgroundWidget->GetZoomAmount();
 	const FVector2f ViewportCenter = WidgetSize * 0.5f;
-	BackgroundWidget->SetViewOffset(FVector2D(CenterGraph.X - ViewportCenter.X / ActualZoom, CenterGraph.Y - ViewportCenter.Y / ActualZoom));
+	BackgroundWidget->SetViewOffset(FVector2f(CenterGraph.X - ViewportCenter.X / ActualZoom, CenterGraph.Y - ViewportCenter.Y / ActualZoom));
 }
 
 int32 SCRRecoilUnitGraphWidget::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
