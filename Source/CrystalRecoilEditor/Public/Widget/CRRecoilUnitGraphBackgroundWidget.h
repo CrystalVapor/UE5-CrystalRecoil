@@ -63,6 +63,4 @@ public:
 	FVector2D GetZoomedAndCenterBasedViewOffset() const;
 
 	int32 GetGridAxisStep() const;
-
-	void SetViewOffset(const FVector2D& Value);
 };
