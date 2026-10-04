@@ -28,6 +28,14 @@ public:
 	void SetTargetController(AController* InController);
 
 	/**
+	* Excludes automatic control-rotation changes from recoil compensation and recovery cancellation.
+	* Use after external aim assist or scripted camera adjustments, passing the measured rotation change for the same controller.
+	* Report only automatic movement, not manual aiming or this component's own recoil.
+	*/
+	UFUNCTION(BlueprintCallable, Category = "Recoil Component|Integration")
+	void NotifyExternalControlRotationDelta(AController* InController, const FRotator& AppliedControlRotationDelta);
+
+	/**
 	* Resets recoil state and prepares for a new firing sequence.
 	* Call when the player presses the fire button.
 	* Override in subclasses to reset additional state on fire start.

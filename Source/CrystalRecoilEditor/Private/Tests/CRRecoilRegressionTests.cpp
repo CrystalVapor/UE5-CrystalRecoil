@@ -680,6 +680,43 @@ bool FCRRecoilControllerChangesTest::RunTest(const FString& Parameters)
 	return true;
 }
 
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCRRecoilExternalRotationTest, "CrystalRecoil.Runtime.ExternalControlRotation", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FCRRecoilExternalRotationTest::RunTest(const FString& Parameters)
+{
+	for (const double TrackingYaw : { -2.0, 30.0 })
+	{
+		FRecoilTestWorld Fixture;
+		Fixture.Pattern->RecoveryDelay = 0.5f;
+		Fixture.Pattern->RecoveryCancelThreshold = 0.1f;
+		Fixture.Pattern->InitialRecoverySpeed = 90.f;
+		Fixture.Pattern->MaxRecoverySpeed = 90.f;
+		Fixture.Pattern->GetUnitGraph()->AddUnit(FVector2f(5.f, 0.f));
+		Fixture.Component->StartShooting();
+		Fixture.Component->ApplyShot();
+		Fixture.Advance(12);
+		const FRotator BeforeTracking = Fixture.Controller->GetControlRotation();
+		Fixture.Controller->SetControlRotation(BeforeTracking + FRotator(0.f, TrackingYaw, 0.f));
+		Fixture.Component->NotifyExternalControlRotationDelta(Fixture.Controller, (Fixture.Controller->GetControlRotation() - BeforeTracking).GetNormalized());
+		Fixture.Advance(120);
+		TestTrue(TEXT("Automatic tracking survives recovery without compensating or canceling it"), FMath::IsNearlyEqual(Fixture.Controller->GetControlRotation().Yaw, TrackingYaw, 0.001));
+	}
+
+	FRecoilTestWorld Fixture;
+	Fixture.Pattern->RecoveryDelay = 0.5f;
+	Fixture.Pattern->RecoveryCancelThreshold = 0.1f;
+	Fixture.Pattern->GetUnitGraph()->AddUnit(FVector2f(5.f, 0.f));
+	Fixture.Component->StartShooting();
+	Fixture.Component->ApplyShot();
+	Fixture.Advance(12);
+	Fixture.Controller->SetControlRotation(FRotator(0.f, 3.f, 0.f));
+	APlayerController* OtherController = Fixture.World->SpawnActor<APlayerController>();
+	Fixture.Component->NotifyExternalControlRotationDelta(OtherController, FRotator(0.f, -2.f, 0.f));
+	Fixture.Advance(120);
+	TestTrue(TEXT("Notifications for another controller cannot mask manual recovery cancellation"), FMath::IsNearlyEqual(Fixture.Controller->GetControlRotation().Yaw, 3.0, 0.001));
+	return true;
+}
+
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FCRRecoilScaledHookTest, "CrystalRecoil.Runtime.ScaledHook", EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
 
 bool FCRRecoilScaledHookTest::RunTest(const FString& Parameters)

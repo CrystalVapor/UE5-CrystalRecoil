@@ -81,9 +81,13 @@ Call `UCRRecoilSpreadComponent::GetCurrentSpreadAngle()` before each shot to get
 
 Reducing the heat cap with `SetMaxRecoilHeat()` immediately clamps existing heat and notifies `OnHeatChanged` when heat changes. Assigning `MaxRecoilHeat` in Blueprint uses the same setter.
 
+## External Rotation Integration
+
+External aim assist or scripted camera adjustments can call `UCRRecoilComponent::NotifyExternalControlRotationDelta` after applying automatic control rotation. Pass the matching controller and the measured `(RotationAfter - RotationBefore).GetNormalized()` delta so recoil does not treat that movement as manual compensation or recovery cancellation. Report only automatic movement, excluding player input and this component's own recoil.
+
 ## Tests
 
-Run the `CrystalRecoil` tests in Unreal Editor's Session Frontend Automation tab to check recoil and compensation, controller changes, spread heat and cooldown, Blueprint heat-cap assignments, graph ordering, undo/redo, selection, and scaling gestures.
+Run the `CrystalRecoil` tests in Unreal Editor's Session Frontend Automation tab to check recoil and compensation, controller changes, spread heat and cooldown, Blueprint heat-cap assignments, graph ordering, undo/redo, selection, scaling gestures, and external rotation integration.
 
 ## Acknowledgements
 

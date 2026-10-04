@@ -238,6 +238,17 @@ void UCRRecoilComponent::SetTargetController(AController* InController)
 	RecoilInputGeneratedLastFrame = FRotator::ZeroRotator;
 }
 
+void UCRRecoilComponent::NotifyExternalControlRotationDelta(AController* InController, const FRotator& AppliedControlRotationDelta)
+{
+	if (!IsComponentTickEnabled() || !IsValid(InController) || AppliedControlRotationDelta.ContainsNaN() || TargetController.Get() != InController)
+	{
+		return;
+	}
+
+	// Shift the observation baseline so automatic camera movement is never interpreted as player input.
+	CachedControllerRotation = (CachedControllerRotation + AppliedControlRotationDelta).GetNormalized();
+}
+
 void UCRRecoilComponent::ApplyInputToController(AController* InTargetController, const FRotator& Input)
 {
 	if (!InTargetController)
