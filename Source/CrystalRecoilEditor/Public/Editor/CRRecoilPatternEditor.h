@@ -3,10 +3,12 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "EditorUndoClient.h"
 
 class SCRRecoilUnitGraphWidget;
 class UCRRecoilUnitGraph;
 class UCRRecoilPattern;
+struct FPropertyChangedEvent;
 
 class FCRRecoilUnitSelection
 {
@@ -37,10 +39,14 @@ protected:
 	TArray<int32> SelectedUnits;
 };
 
-class CRYSTALRECOILEDITOR_API FCRRecoilPatternEditor : public FAssetEditorToolkit
+class CRYSTALRECOILEDITOR_API FCRRecoilPatternEditor : public FAssetEditorToolkit, public FEditorUndoClient
 {
 public:
 	FCRRecoilPatternEditor();
+
+	virtual void PostUndo(bool bSuccess) override;
+
+	virtual void PostRedo(bool bSuccess) override;
 
 	static TSharedRef<FCRRecoilPatternEditor> CreateRecoilPatternEditor(const EToolkitMode::Type Mode, const TSharedPtr<IToolkitHost>& InitToolkitHost, UCRRecoilPattern* RecoilPattern);
 
@@ -121,6 +127,10 @@ public:
 	float GridSnappingValue = 0.1f;
 
 protected:
+	void RefreshUnitSelection();
+
+	void OnGraphDetailsChanged(const FPropertyChangedEvent& PropertyChangedEvent);
+
 	void OnSelectionChanged() const;
 
 	inline static const FName ToolkitFName = FName("CRRecoilPatternEditor");

@@ -54,7 +54,7 @@ public:
 	* Overrides the maximum heat cap at runtime
 	* Useful for abilities or buffs that temporarily increase or decrease the weapon's heat capacity
 	*/
-	UFUNCTION(BlueprintCallable, Category = "Spread Recoil Component")
+	UFUNCTION(BlueprintCallable, BlueprintSetter, Category = "Spread Recoil Component")
 	void SetMaxRecoilHeat(const float InMaxHeat);
 
 	/**
@@ -78,7 +78,7 @@ protected:
 
 	bool ReadyToCalculateRecoil() const;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (ClampMin = 0.f), Category = "Recoil Spread|Heat")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, BlueprintSetter = SetMaxRecoilHeat, Meta = (ClampMin = 0.f), Category = "Recoil Spread|Heat")
 	float MaxRecoilHeat = 100.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Meta = (ClampMin = 0.f, ForceUnits = "s"), Category = "Recoil Spread|Heat")

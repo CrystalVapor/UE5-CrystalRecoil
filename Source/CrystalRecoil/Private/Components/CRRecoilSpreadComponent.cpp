@@ -61,6 +61,10 @@ float UCRRecoilSpreadComponent::GetRecoilHeat() const
 void UCRRecoilSpreadComponent::SetMaxRecoilHeat(const float InMaxHeat)
 {
     MaxRecoilHeat = FMath::Max(0.f, InMaxHeat);
+    if (CurrentRecoilHeat > MaxRecoilHeat)
+    {
+        SetRecoilHeat(MaxRecoilHeat);
+    }
 }
 
 void UCRRecoilSpreadComponent::SetRecoilHeatCoolDownDelay(const float InDelay)

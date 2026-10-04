@@ -13,11 +13,18 @@
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Editor.h"
+#include "Editor/TransBuffer.h"
 
 void SCRRecoilUnitGraphWidget::Construct(const FArguments& InArgs)
 {
     check(InArgs._RecoilPatternEditor)
     RecoilPatternEditor = InArgs._RecoilPatternEditor;
+	TransactionBuffer = GEditor ? Cast<UTransBuffer>(GEditor->Trans) : nullptr;
+	if (UTransBuffer* TransBuffer = TransactionBuffer.Get())
+	{
+		BeforeUndoRedoHandle = TransBuffer->OnBeforeRedoUndo().AddSP(this, &SCRRecoilUnitGraphWidget::OnBeforeUndoRedo);
+	}
 
     static const FSlateRoundedBoxBrush KeyBorderBrush(FLinearColor(1.f, 1.f, 1.f, 0.07f), 4.f);
     static const FSlateRoundedBoxBrush PanelBackgroundBrush(FLinearColor(0.025f, 0.025f, 0.025f, 0.85f), 6.f);
@@ -161,6 +168,20 @@ void SCRRecoilUnitGraphWidget::Construct(const FArguments& InArgs)
     ];
 }
 
+SCRRecoilUnitGraphWidget::~SCRRecoilUnitGraphWidget()
+{
+	if (UTransBuffer* TransBuffer = TransactionBuffer.Get())
+	{
+		TransBuffer->OnBeforeRedoUndo().Remove(BeforeUndoRedoHandle);
+	}
+}
+
+void SCRRecoilUnitGraphWidget::OnBeforeUndoRedo(const FTransactionContext& TransactionContext)
+{
+	// The undo buffer is already transacting here, so preview edits must be reverted without a transaction.
+	CancelDragging();
+}
+
 void SCRRecoilUnitGraphWidget::SetRecoilUnitGraph(UCRRecoilUnitGraph* InRecoilUnitGraph)
 {
 	RecoilUnitGraph = InRecoilUnitGraph;
@@ -264,19 +285,24 @@ int32 SCRRecoilUnitGraphWidget::OnPaint(const FPaintArgs& Args, const FGeometry&
 FReply SCRRecoilUnitGraphWidget::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
 	SelectionDrag.Reset();
+	MoveUnitsDrag.Reset();
+	ViewDrag.Reset();
 
 	const FVector2f MousePanelLocation = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	CurrentMousePanelPosition = MousePanelLocation;
 	if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
+		StopUnitScaling();
 		ViewDrag = FCRUnitGraphViewDelayedDrag(MousePanelLocation, EKeys::RightMouseButton);
 	}
 
 	if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
+		StopUnitScaling();
 		if (MouseEvent.IsShiftDown())
 		{
 			AddUnitUnderCursor();
-			return FReply::Handled();
+			return FReply::Handled().SetUserFocus(SharedThis(this));
 		}
 
 		LastLeftMouseDownFoundUnitID = FindUnitByScreenLocation(MousePanelLocation);
@@ -295,21 +321,18 @@ FReply SCRRecoilUnitGraphWidget::OnMouseButtonDown(const FGeometry& MyGeometry, 
 			}
 
 			CurrentRecoilUnitSelection.AddSelection(LastLeftMouseDownFoundUnitID);
-			MoveUnitsDrag = FCRUnitGraphMoveUnitsDelayedDrag(GetUnitGraph(), CurrentRecoilUnitSelection, GetUnitGraph()->GetUnitByID(LastLeftMouseDownFoundUnitID)->Position, MousePanelLocation, EKeys::LeftMouseButton);
+			MoveUnitsDrag.Emplace(GetUnitGraph(), CurrentRecoilUnitSelection, GetUnitGraph()->GetUnitByID(LastLeftMouseDownFoundUnitID)->Position, MousePanelLocation, EKeys::LeftMouseButton);
 		}
 	}
 
-	return FReply::Handled();
+	return FReply::Handled().CaptureMouse(SharedThis(this)).SetUserFocus(SharedThis(this));
 }
 
 FReply SCRRecoilUnitGraphWidget::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
 	if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
-		if (ViewDrag.IsSet() && ViewDrag->IsDragging())
-		{
-			ViewDrag.Reset();
-		}
+		ViewDrag.Reset();
 	}
 	else if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
 	{
@@ -335,14 +358,26 @@ FReply SCRRecoilUnitGraphWidget::OnMouseButtonUp(const FGeometry& MyGeometry, co
 				CurrentRecoilUnitSelection.ClearSelection();
 			}
 		}
+
+		SelectionDrag.Reset();
+		MoveUnitsDrag.Reset();
 	}
 
-	return FReply::Handled();
+	return FReply::Handled().ReleaseMouseCapture();
 }
 
 FReply SCRRecoilUnitGraphWidget::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
 	CurrentMousePanelPosition = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	if (!MouseEvent.IsMouseButtonDown(EKeys::LeftMouseButton))
+	{
+		SelectionDrag.Reset();
+		MoveUnitsDrag.Reset();
+	}
+	if (!MouseEvent.IsMouseButtonDown(EKeys::RightMouseButton))
+	{
+		ViewDrag.Reset();
+	}
 
 	if (ViewDrag.IsSet() && (ViewDrag->IsDragging() || ViewDrag->AttemptDragStart(MouseEvent)))
 	{
@@ -376,9 +411,14 @@ FReply SCRRecoilUnitGraphWidget::OnMouseMove(const FGeometry& MyGeometry, const 
 		else
 		{
 			UCRRecoilUnitGraph* CurrentRecoilUnitGraph = GetUnitGraph();
-			const FCRRecoilUnit& LastRecoilUnit = *(CurrentRecoilUnitGraph->GetUnitByID(LastLeftMouseDownFoundUnitID));
+			const FCRRecoilUnit* LastRecoilUnit = CurrentRecoilUnitGraph->GetUnitByID(LastLeftMouseDownFoundUnitID);
+			if (!LastRecoilUnit)
+			{
+				MoveUnitsDrag.Reset();
+				return FReply::Handled();
+			}
 			const FVector2f SnappedNewRecoilLocation = FVector2f(FMath::RoundToInt(NewRecoilLocation.X / GridSnapSize) * GridSnapSize, FMath::RoundToInt(NewRecoilLocation.Y / GridSnapSize) * GridSnapSize);
-			const FVector2f DeltaRecoilLocation = SnappedNewRecoilLocation - LastRecoilUnit.Position;
+			const FVector2f DeltaRecoilLocation = SnappedNewRecoilLocation - LastRecoilUnit->Position;
 			MoveUnitsDrag->ApplyMovement(RecoilUnitSelection, DeltaRecoilLocation);
 			MoveUnitsDrag->LastRecoilCoordsLocation = SnappedNewRecoilLocation;
 		}
@@ -392,9 +432,20 @@ FReply SCRRecoilUnitGraphWidget::OnMouseMove(const FGeometry& MyGeometry, const 
 		const FVector2f NewPanelLocation = CurrentMousePanelPosition;
 		const FVector2f InitialPanelLocation = ScaleUnitsDrag->InitialPanelLocation;
 		const FVector2f ScaleVector = NewPanelLocation - InitialPanelLocation;
-		const float NewScale = ScaleVector.Size() / ScaleUnitsDrag->NormalVectorSizePanel;
+		const float Radius = ScaleVector.Size();
+		if (ScaleUnitsDrag->NormalVectorSizePanel <= UE_SMALL_NUMBER)
+		{
+			// A cursor at the pivot needs a nonzero radius before scaling can begin.
+			if (Radius <= UE_SMALL_NUMBER || !FMath::IsFinite(Radius))
+			{
+				return FReply::Handled();
+			}
+			ScaleUnitsDrag->NormalVectorSizePanel = Radius;
+		}
+		const float NewScale = Radius / ScaleUnitsDrag->NormalVectorSizePanel;
 		const FCRRecoilUnitSelection& RecoilUnitSelection = GetRecoilUnitSelection();
 		ScaleUnitsDrag->ApplyScaling(RecoilUnitSelection, NewScale);
+		TryAutoRearrangeUnits();
 	}
 
 	return SCompoundWidget::OnMouseMove(MyGeometry, MouseEvent);
@@ -407,17 +458,28 @@ FReply SCRRecoilUnitGraphWidget::OnMouseWheel(const FGeometry& MyGeometry, const
 
 void SCRRecoilUnitGraphWidget::OnMouseLeave(const FPointerEvent& MouseEvent)
 {
-	if (ViewDrag.IsSet() && ViewDrag->IsDragging())
+	if (!HasMouseCapture())
 	{
 		ViewDrag.Reset();
-	}
-
-	if (SelectionDrag.IsSet() && SelectionDrag->IsDragging())
-	{
 		SelectionDrag.Reset();
+		MoveUnitsDrag.Reset();
 	}
 
 	SCompoundWidget::OnMouseLeave(MouseEvent);
+}
+
+void SCRRecoilUnitGraphWidget::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	ViewDrag.Reset();
+	SelectionDrag.Reset();
+	MoveUnitsDrag.Reset();
+	SCompoundWidget::OnMouseCaptureLost(CaptureLostEvent);
+}
+
+void SCRRecoilUnitGraphWidget::OnFocusLost(const FFocusEvent& InFocusEvent)
+{
+	FinishDragging();
+	SCompoundWidget::OnFocusLost(InFocusEvent);
 }
 
 FReply SCRRecoilUnitGraphWidget::OnKeyUp(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
@@ -594,8 +656,9 @@ void SCRRecoilUnitGraphWidget::DrawSelectionBox(FSlateWindowElementList& OutDraw
 	FSlateDrawElement::MakeBox(OutDrawElements, BaseLayerID + CrystalRecoilEditor::EEditorLayerOffset::RecoilUnitSelectionBoxLayer, AllottedGeometry.ToPaintGeometry(SelectionBoxRect.GetSize(), FSlateLayoutTransform(SelectionBoxRect.GetTopLeft())), FAppStyle::GetBrush(TEXT("MarqueeSelection")));
 }
 
-void SCRRecoilUnitGraphWidget::AddUnitUnderCursor() const
+void SCRRecoilUnitGraphWidget::AddUnitUnderCursor()
 {
+	FinishDragging();
 	UCRRecoilUnitGraph* CurrentRecoilUnitGraph = GetUnitGraph();
 	FScopedTransaction Transaction(NSLOCTEXT("SCRRecoilUnitGraphWidget", "AddUnitUnderCursor", "Add Unit Under Cursor"));
 	CurrentRecoilUnitGraph->Modify();
@@ -606,8 +669,9 @@ void SCRRecoilUnitGraphWidget::AddUnitUnderCursor() const
 	TryAutoRearrangeUnits();
 }
 
-void SCRRecoilUnitGraphWidget::AddUnit(const FVector2f& RecoilLocation) const
+void SCRRecoilUnitGraphWidget::AddUnit(const FVector2f& RecoilLocation)
 {
+	FinishDragging();
 	UCRRecoilUnitGraph* CurrentRecoilUnitGraph = GetUnitGraph();
 	FScopedTransaction Transaction(NSLOCTEXT("SCRRecoilUnitGraphWidget", "AddUnit", "Add Unit"));
 	CurrentRecoilUnitGraph->Modify();
@@ -620,9 +684,12 @@ void SCRRecoilUnitGraphWidget::CopySelectedUnits() const
 	UCRRecoilUnitGraph* CurrentRecoilUnitGraph = GetUnitGraph();
 	FCRRecoilUnitClipboardData CopiedData;
 
-	for (const FCRRecoilUnit* Unit : CurrentUnitSelection.GetSelectedRecoilUnits(CurrentRecoilUnitGraph))
+	for (const FCRRecoilUnit& Unit : CurrentRecoilUnitGraph->GetRecoilUnits())
 	{
-		CopiedData.RecoilUnitLocations.Add(Unit->Position);
+		if (CurrentUnitSelection.IsUnitSelected(Unit.ID))
+		{
+			CopiedData.RecoilUnitLocations.Add(Unit.Position);
+		}
 	}
 
 	FString ExportedString;
@@ -630,7 +697,7 @@ void SCRRecoilUnitGraphWidget::CopySelectedUnits() const
 	FPlatformApplicationMisc::ClipboardCopy(*ExportedString);
 }
 
-void SCRRecoilUnitGraphWidget::PasteUnits() const
+void SCRRecoilUnitGraphWidget::PasteUnits()
 {
 	FCRRecoilUnitClipboardData CopiedData;
 	FString CopiedString;
@@ -640,6 +707,7 @@ void SCRRecoilUnitGraphWidget::PasteUnits() const
 		return;
 	}
 
+	FinishDragging();
 	UCRRecoilUnitGraph* CurrentRecoilUnitGraph = GetUnitGraph();
 	const FVector2f CurrentMouseRecoilLocation = GraphCoordsToRecoilCoords(BackgroundWidget->PanelCoordToGraphCoord(CurrentMousePanelPosition));
 	FScopedTransaction Transaction(NSLOCTEXT("SCRRecoilUnitGraphWidget", "PasteUnits", "Paste Units"));
@@ -653,8 +721,9 @@ void SCRRecoilUnitGraphWidget::PasteUnits() const
 	TryAutoRearrangeUnits();
 }
 
-void SCRRecoilUnitGraphWidget::DeleteUnits() const
+void SCRRecoilUnitGraphWidget::DeleteUnits()
 {
+	FinishDragging();
 	FCRRecoilUnitSelection& CurrentUnitSelection = GetRecoilUnitSelection();
 	UCRRecoilUnitGraph* CurrentRecoilUnitGraph = GetUnitGraph();
 	FScopedTransaction Transaction(NSLOCTEXT("SCRRecoilUnitGraphWidget", "DeleteUnits", "Delete Units"));
@@ -671,11 +740,47 @@ void SCRRecoilUnitGraphWidget::DeleteUnits() const
 	CurrentUnitSelection.ClearSelection();
 }
 
+void SCRRecoilUnitGraphWidget::FinishDragging()
+{
+	ViewDrag.Reset();
+	SelectionDrag.Reset();
+	MoveUnitsDrag.Reset();
+	StopUnitScaling();
+	if (HasMouseCapture())
+	{
+		FSlateApplication::Get().ReleaseAllPointerCapture();
+	}
+}
+
+void SCRRecoilUnitGraphWidget::CancelDragging()
+{
+	if (MoveUnitsDrag.IsSet())
+	{
+		MoveUnitsDrag->Cancel();
+	}
+	if (ScaleUnitsDrag.IsSet())
+	{
+		ScaleUnitsDrag->Cancel();
+	}
+	FinishDragging();
+}
+
 void SCRRecoilUnitGraphWidget::StartUnitScaling()
 {
+	if (!FSlateApplication::Get().SetKeyboardFocus(SharedThis(this)))
+	{
+		StopUnitScaling();
+		return;
+	}
+
 	TArray<FCRRecoilUnit*> SelectedUnits = GetRecoilUnitSelection().GetSelectedRecoilUnits(GetUnitGraph());
 	FVector2f AverageLocation = FVector2f::ZeroVector;
 	const int32 Num = SelectedUnits.Num();
+	if (Num <= 1)
+	{
+		StopUnitScaling();
+		return;
+	}
 
 	for (int32 Index = 0; Index < Num; ++Index)
 	{
@@ -687,12 +792,14 @@ void SCRRecoilUnitGraphWidget::StartUnitScaling()
 	const FVector2f CurrentMouseRecoilPosition = GraphCoordsToRecoilCoords(BackgroundWidget->PanelCoordToGraphCoord(CurrentMousePanelPosition));
 	const FVector2f MidRecoilLocation = (AverageLocation + CurrentMouseRecoilPosition) * 0.5f;
 	const FVector2f MidPanelLocation = BackgroundWidget->GraphCoordToPanelCoord(RecoilCoordsToGraphCoords(MidRecoilLocation));
-	ScaleUnitsDrag = FCRUnitGraphScaleUnitsDelayedDrag(GetUnitGraph(), GetRecoilUnitSelection(), MidRecoilLocation, MidPanelLocation, EKeys::LeftMouseButton);
+	MoveUnitsDrag.Reset();
+	ScaleUnitsDrag.Emplace(GetUnitGraph(), GetRecoilUnitSelection(), MidRecoilLocation, MidPanelLocation, EKeys::LeftMouseButton);
 	ScaleUnitsDrag->NormalVectorSizePanel = (MidPanelLocation - CurrentMousePanelPosition).Size();
 }
 
 void SCRRecoilUnitGraphWidget::StopUnitScaling()
 {
+	RecoilPatternEditor->bEnableUnitScaling = false;
 	if (ScaleUnitsDrag.IsSet())
 	{
 		ScaleUnitsDrag.Reset();

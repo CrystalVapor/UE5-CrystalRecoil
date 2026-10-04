@@ -13,6 +13,18 @@ UCRRecoilComponent::UCRRecoilComponent()
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 }
 
+void UCRRecoilComponent::SetComponentTickEnabled(bool bEnabled)
+{
+	if (bEnabled && !IsComponentTickEnabled())
+	{
+		// Heat and external tick requests can resume processing before the next shot.
+		const AController* Controller = GetTargetController();
+		CachedControllerRotation = Controller ? Controller->GetControlRotation() : FRotator::ZeroRotator;
+		RecoilInputGeneratedLastFrame = FRotator::ZeroRotator;
+	}
+	Super::SetComponentTickEnabled(bEnabled);
+}
+
 void UCRRecoilComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -54,11 +66,12 @@ void UCRRecoilComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 			DeltaRecoilRotation = FRotator(RecoilToApply.Pitch * Alpha, RecoilToApply.Yaw * Alpha, 0.f);
 		}
 
+		const FRotator ScheduledRecoilRotation = DeltaRecoilRotation;
 		if (ProcessDeltaRecoilRotation(DeltaRecoilRotation))
 		{
 			const FRotator RequestedRecoilRotation = DeltaRecoilRotation;
 			const FRotator AppliedRecoilRotation = ApplyInputToControllerAndMeasure(Controller, RequestedRecoilRotation);
-			RecoilToApply -= RequestedRecoilRotation;
+			RecoilToApply -= ScheduledRecoilRotation;
 			RecoilToRecover += AppliedRecoilRotation;
 			DeltaRecoilRotation = AppliedRecoilRotation;
 		}
@@ -70,21 +83,22 @@ void UCRRecoilComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 		}
 	}
 
+	constexpr double RecoveryTolerance = 0.001;
 	// Always try to compensate if player is pulling against accumulated recoil
-	if (!RecoilToRecover.IsNearlyZero(0.001))
+	if (!RecoilToRecover.IsNearlyZero(RecoveryTolerance))
 	{
 		ReduceRecoveryByPlayerInput(InputLastFrame);
 	}
 
-	// Accumulate player input during RecoveryDelay wait, but not during uplift
-	if (bTrackingInputDuringFire && RecoilToApply.IsNearlyZero() && LastFireTime + RecoilPattern->RecoveryDelay >= World->GetTimeSeconds())
+	// Track aiming through uplift and the delay until recovery begins.
+	if (bTrackingInputDuringFire)
 	{
 		AccumulatedInputDuringFire.Pitch += InputLastFrame.Pitch;
 		AccumulatedInputDuringFire.Yaw += InputLastFrame.Yaw;
 	}
 
 	// Apply recoil recovery - only after uplift is fully complete
-	if (RecoilPattern->RecoveryDelay >= 0.f && RecoilToApply.IsNearlyZero() && !RecoilToRecover.IsNearlyZero(0.001))
+	if (RecoilPattern->RecoveryDelay >= 0.f && RecoilToApply.IsNearlyZero() && !RecoilToRecover.IsNearlyZero(RecoveryTolerance))
 	{
 		if (LastFireTime + RecoilPattern->RecoveryDelay < World->GetTimeSeconds())
 		{
@@ -98,6 +112,8 @@ void UCRRecoilComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 				{
 					// Player took manual control - cancel and reset recovery
 					RecoilToRecover = FRotator::ZeroRotator;
+					// Spread heat may keep ticking, so preserve this frame's generated input.
+					RecoilInputGeneratedLastFrame = FRotator(-DeltaRecoilRotation.Pitch, DeltaRecoilRotation.Yaw, 0.f);
 					SetComponentTickEnabled(false);
 					return;
 				}
@@ -118,18 +134,19 @@ void UCRRecoilComponent::TickComponent(float DeltaTime, ELevelTick TickType, FAc
 				DeltaRecoveryRotation = FRotator::ZeroRotator;
 			}
 
-			if (RecoilToRecover.IsNearlyZero(0.001))
+			if (RecoilToRecover.IsNearlyZero(RecoveryTolerance))
 			{
 				RecoilToRecover = FRotator::ZeroRotator;
 				SetComponentTickEnabled(false);
 			}
 		}
 	}
-	else if (RecoilToApply.IsNearlyZero() && RecoilToRecover.IsNearlyZero())
+	else if (RecoilToApply.IsNearlyZero() && RecoilToRecover.IsNearlyZero(RecoveryTolerance))
 	{
 		// Nothing to process - disable tick only if we're past the recovery delay window
 		if (World->GetTimeSeconds() > LastFireTime + RecoilPattern->RecoveryDelay)
 		{
+			RecoilToRecover = FRotator::ZeroRotator;
 			SetComponentTickEnabled(false);
 		}
 	}
@@ -171,6 +188,7 @@ void UCRRecoilComponent::ApplyShot()
 
 	CurrentRecoverySpeed = RecoilPattern->InitialRecoverySpeed;
 	LastFireTime = World->GetTimeSeconds();
+	SetComponentTickEnabled(true);
 }
 
 void UCRRecoilComponent::ReduceRecoveryByPlayerInput(const FRotator& LastFrameInput)
@@ -190,12 +208,32 @@ void UCRRecoilComponent::ReduceRecoveryByPlayerInput(const FRotator& LastFrameIn
 	};
 
 	CompensateAxis(RecoilToRecover.Pitch, LastFrameInput.Pitch); // Vertical
-	CompensateAxis(RecoilToRecover.Yaw, LastFrameInput.Yaw);     // Horizontal
+	// Yaw counter-steering has the opposite sign to the accumulated recoil debt.
+	CompensateAxis(RecoilToRecover.Yaw, -LastFrameInput.Yaw);
 }
 
 void UCRRecoilComponent::SetTargetController(AController* InController)
 {
+	if (!InController)
+	{
+		if (const UWorld* World = GetWorld())
+		{
+			InController = World->GetFirstPlayerController();
+		}
+	}
+	if (TargetController.Get() == InController && !TargetController.IsStale())
+	{
+		return;
+	}
+
 	TargetController = InController;
+	RecoilToApply = FRotator::ZeroRotator;
+	CurrentRecoilSpeed = 0.f;
+	CurrentUpliftDeceleration = 0.f;
+	RecoilToRecover = FRotator::ZeroRotator;
+	CurrentRecoverySpeed = 0.f;
+	bTrackingInputDuringFire = false;
+	AccumulatedInputDuringFire = FRotator::ZeroRotator;
 	CachedControllerRotation = InController ? InController->GetControlRotation() : FRotator::ZeroRotator;
 	RecoilInputGeneratedLastFrame = FRotator::ZeroRotator;
 }
@@ -253,7 +291,7 @@ void UCRRecoilComponent::StartShooting()
 
 	if (RecoilPattern)
 	{
-		bTrackingInputDuringFire = RecoilPattern->RecoveryDelay > 0.f && RecoilPattern->RecoveryCancelThreshold > 0.f;
+		bTrackingInputDuringFire = RecoilPattern->RecoveryDelay >= 0.f && RecoilPattern->RecoveryCancelThreshold > 0.f;
 		SetComponentTickEnabled(true);
 	}
 }
@@ -276,14 +314,11 @@ float UCRRecoilComponent::GetRecoilStrength() const
 	return RecoilStrength;
 }
 
-AController* UCRRecoilComponent::GetTargetController() const
+AController* UCRRecoilComponent::GetTargetController()
 {
 	if (!TargetController.IsValid())
 	{
-		if (const UWorld* World = GetWorld())
-		{
-			TargetController = World->GetFirstPlayerController();
-		}
+		SetTargetController(nullptr);
 	}
 	return TargetController.Get();
 }

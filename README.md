@@ -28,6 +28,7 @@ then drive them at runtime through a Blueprint and C++ API.
    - Or call `UCRRecoilComponent::SetRecoilPattern` to assign the pattern at runtime
 4. On `BeginPlay`, optionally call `UCRRecoilComponent::SetTargetController` to specify which controller receives recoil
    - If not called, defaults to `GetFirstPlayerController` automatically
+   - Changing the target clears pending recoil and recovery for the previous controller
 5. On fire start: call `UCRRecoilComponent::StartShooting`
 6. On each shot: call `UCRRecoilComponent::ApplyShot`
 
@@ -49,16 +50,20 @@ Delta rotation is calculated from the recoil pattern coordinates. Using kinemati
 Player input that opposes accumulated recoil (e.g., pulling down while gun kicks up) reduces the recovery debt in real-time, allowing players to manually control recoil.
 
 **Recovery**<br>
-After `RecoveryDelay`, the camera automatically returns toward the pre-shot position at a configurable speed and acceleration. Recovery can be canceled if the player makes large aiming movements (controlled by `RecoveryCancelThreshold`), allowing natural aim adjustments without fighting the system.
+Once recoil uplift is complete and `RecoveryDelay` has elapsed since the last shot, the camera automatically returns toward the pre-shot position at a configurable speed and acceleration. Recovery can be canceled if the player makes large aiming movements (controlled by `RecoveryCancelThreshold`), including while recoil is still rising, allowing natural aim adjustments without fighting the system.
 
 ## Recoil Pattern Editor Shortcuts
 
 - **Shift+Click**: Add Unit
 - **Shift+S**: Toggle Snapping
-- **S**: Scale
+- **S**: Scale (select at least two units)
 - **R**: Auto Rearrange
 - **F**: Zoom View to Fit
 - **H**: Toggle Shortcuts
+
+Activating Scale opens and focuses the Graph tab. Move the mouse to scale the selected units, then press **S** again or click to finish. Right-click panning or moving focus to another panel also finishes scaling.
+
+Auto Rearrange applies the graph's rearrange policy when units are edited, including through Graph Settings. Disable it to preserve manual shot order. Copying selected units preserves their shot order, regardless of selection order.
 
 ## Recoil Spread Component
 
@@ -73,6 +78,12 @@ The spread effect is driven by three curves configured in the editor:
 - `HeatToCooldownPerSecondCurve` - heat lost per second based on current heat
 
 Call `UCRRecoilSpreadComponent::GetCurrentSpreadAngle()` before each shot to get the current spread angle for projectile direction calculation.
+
+Reducing the heat cap with `SetMaxRecoilHeat()` immediately clamps existing heat and notifies `OnHeatChanged` when heat changes. Assigning `MaxRecoilHeat` in Blueprint uses the same setter.
+
+## Tests
+
+Run the `CrystalRecoil` tests in Unreal Editor's Session Frontend Automation tab to check recoil and compensation, controller changes, spread heat and cooldown, Blueprint heat-cap assignments, graph ordering, undo/redo, selection, and scaling gestures.
 
 ## Acknowledgements
 

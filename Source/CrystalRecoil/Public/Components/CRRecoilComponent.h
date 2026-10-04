@@ -16,11 +16,13 @@ public:
 	UCRRecoilComponent();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void SetComponentTickEnabled(bool bEnabled) override;
 
 	/**
 	* Sets the controller that receives recoil effects (camera kick).
 	* Call this on BeginPlay before StartShooting.
 	* If not called or set to nullptr, falls back to the first PlayerController in the world.
+	* Changing controllers clears pending recoil and recovery.
 	*/
 	UFUNCTION(BlueprintCallable, Category = "Recoil Component")
 	void SetTargetController(AController* InController);
@@ -93,7 +95,7 @@ protected:
 	*/
 	void ReduceRecoveryByPlayerInput(const FRotator& LastFrameInput);
 
-	AController* GetTargetController() const;
+	AController* GetTargetController();
 
 	UPROPERTY(BlueprintReadOnly, EditDefaultsOnly, Category = "Recoil Component")
 	TObjectPtr<UCRRecoilPattern> RecoilPattern;
@@ -120,5 +122,5 @@ protected:
 	FRotator RecoilInputGeneratedLastFrame = FRotator::ZeroRotator;
 	FRotator CachedControllerRotation = FRotator::ZeroRotator;
 
-	mutable TWeakObjectPtr<AController> TargetController;
+	TWeakObjectPtr<AController> TargetController;
 };

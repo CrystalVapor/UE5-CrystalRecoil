@@ -51,11 +51,13 @@ public:
 
 	~FCRUnitGraphScaleUnitsDelayedDrag();
 
+	void Cancel();
+
 	void ApplyScaling(const FCRRecoilUnitSelection& RecoilUnitSelection, float NewScale);
 
 	TArray<FCRRecoilUnit> CachedRecoilUnits;
 
-	UCRRecoilUnitGraph* CachedUnitGraph;
+	TWeakObjectPtr<UCRRecoilUnitGraph> CachedUnitGraph;
 
 	float CurrentScale = 1.f;
 
@@ -77,11 +79,13 @@ public:
 
 	~FCRUnitGraphMoveUnitsDelayedDrag();
 
+	void Cancel();
+
 	void ApplyMovement(const FCRRecoilUnitSelection& UnitSelection, const FVector2f& Movement) const;
 
 	TArray<FCRRecoilUnit> CachedRecoilUnits;
 
-	UCRRecoilUnitGraph* CachedUnitGraph;
+	TWeakObjectPtr<UCRRecoilUnitGraph> CachedUnitGraph;
 
 	FVector2f LastRecoilCoordsLocation = FVector2f::ZeroVector;
 
