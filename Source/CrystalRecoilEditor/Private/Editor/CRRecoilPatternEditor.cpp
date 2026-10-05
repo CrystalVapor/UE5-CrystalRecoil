@@ -7,6 +7,7 @@
 #include "IStructureDetailsView.h"
 #include "ScopedTransaction.h"
 #include "Widget/CRRecoilUnitGraphEditor.h"
+#include "Editor.h"
 
 void FCRRecoilUnitSelection::AddSelection(const int32 UnitID)
 {
@@ -82,6 +83,54 @@ int32 FCRRecoilUnitSelection::GetNum() const
 FCRRecoilPatternEditor::FCRRecoilPatternEditor()
 {
 	RecoilUnitSelection.OnSelectionChanged.AddRaw<FCRRecoilPatternEditor>(this, &FCRRecoilPatternEditor::OnSelectionChanged);
+	if (GEditor)
+	{
+		GEditor->RegisterForUndo(this);
+	}
+}
+
+void FCRRecoilPatternEditor::PostUndo(bool bSuccess)
+{
+	if (bSuccess)
+	{
+		RefreshUnitSelection();
+	}
+}
+
+void FCRRecoilPatternEditor::RefreshUnitSelection()
+{
+	UCRRecoilUnitGraph* UnitGraph = GetRecoilUnitGraph();
+	if (!UnitGraph)
+	{
+		return;
+	}
+
+	const TArray<int32> SelectedIDs = RecoilUnitSelection.GetSelection();
+	for (const int32 UnitID : SelectedIDs)
+	{
+		if (!UnitGraph->GetUnitByID(UnitID))
+		{
+			RecoilUnitSelection.RemoveSelection(UnitID);
+		}
+	}
+	OnSelectionChanged();
+}
+
+void FCRRecoilPatternEditor::OnGraphDetailsChanged(const FPropertyChangedEvent& PropertyChangedEvent)
+{
+	if (bEnableAutoRearrangeUnits && PropertyChangedEvent.GetMemberPropertyName() == FName(TEXT("RecoilUnits")))
+	{
+		if (UCRRecoilUnitGraph* UnitGraph = GetRecoilUnitGraph())
+		{
+			UnitGraph->RearrangeUnits();
+		}
+	}
+	RefreshUnitSelection();
+}
+
+void FCRRecoilPatternEditor::PostRedo(bool bSuccess)
+{
+	PostUndo(bSuccess);
 }
 
 TSharedRef<FCRRecoilPatternEditor> FCRRecoilPatternEditor::CreateRecoilPatternEditor(const EToolkitMode::Type Mode, const TSharedPtr<IToolkitHost>& InitToolkitHost, UCRRecoilPattern* RecoilPattern)
@@ -217,7 +266,7 @@ void FCRRecoilPatternEditor::MapCommands()
 	(
 		Commands.UnitScaling,
 		FExecuteAction::CreateRaw(this, &FCRRecoilPatternEditor::Command_SwitchUnitScaling),
-		FCanExecuteAction::CreateLambda([this]() { return !RecoilUnitSelection.IsEmpty(); }),
+		FCanExecuteAction::CreateLambda([this]() { return RecoilUnitSelection.GetNum() > 1; }),
 		FIsActionChecked::CreateLambda([this]() { return bEnableUnitScaling; })
 	);
 
@@ -301,6 +350,10 @@ void FCRRecoilPatternEditor::InitializeEditor(const EToolkitMode::Type Mode, con
 {
 	MapCommands();
 	InitAssetEditor(Mode, InitToolkitHost, ToolkitFName, CreateEditorLayout(), true, true, InAsset);
+	if (!UnitGraphWidget.IsValid())
+	{
+		BuildTab_UnitGraph();
+	}
 	ExtendToolBar();
 	RegenerateMenusAndToolbars();
 }
@@ -351,6 +404,7 @@ void FCRRecoilPatternEditor::BuildTab_UnitGraph()
 {
 	UnitGraphWidget = SNew(SCRRecoilUnitGraphWidget)
 		.RecoilPatternEditor(this);
+	UnitGraphWidget->SetRecoilUnitGraph(GetRecoilUnitGraph());
 }
 
 void FCRRecoilPatternEditor::BuildTab_UnitGraphDetails()
@@ -360,6 +414,7 @@ void FCRRecoilPatternEditor::BuildTab_UnitGraphDetails()
 
 	DetailsViewArgs.NameAreaSettings = FDetailsViewArgs::HideNameArea;
 	UnitGraphDetailsWidget = PropertyEditorModule.CreateDetailView(DetailsViewArgs);
+	UnitGraphDetailsWidget->OnFinishedChangingProperties().AddSP(this, &FCRRecoilPatternEditor::OnGraphDetailsChanged);
 }
 
 void FCRRecoilPatternEditor::BuildTab_UnitDetails()
@@ -370,6 +425,7 @@ void FCRRecoilPatternEditor::BuildTab_UnitDetails()
 	DetailsViewArgs.NameAreaSettings = FDetailsViewArgs::HideNameArea;
 	UnitDetailsWidget = PropertyEditorModule.CreateStructureDetailView(DetailsViewArgs, FStructureDetailsViewArgs(),
 	                                                                   nullptr);
+	OnSelectionChanged();
 }
 
 void FCRRecoilPatternEditor::BuildTab_RecoilDetails()
@@ -477,16 +533,18 @@ void FCRRecoilPatternEditor::Command_SwitchAutoRearrangeUnits()
 
 void FCRRecoilPatternEditor::Command_SwitchUnitScaling()
 {
-	bEnableUnitScaling = !bEnableUnitScaling;
-
 	if (bEnableUnitScaling)
 	{
-		UnitGraphWidget->StartUnitScaling();
-	}
-	else
-	{
 		UnitGraphWidget->StopUnitScaling();
+		return;
 	}
+
+	if (const TSharedPtr<FTabManager> EditorTabManager = GetTabManager())
+	{
+		EditorTabManager->TryInvokeTab(UnitGraphTabFName);
+	}
+	bEnableUnitScaling = true;
+	UnitGraphWidget->StartUnitScaling();
 }
 
 void FCRRecoilPatternEditor::Command_ZoomToFitAllUnits() const
@@ -610,7 +668,7 @@ void FCRRecoilPatternEditor::OnSelectionChanged() const
 
 			UnitDetailsWidget->SetStructureData(SelectedUnitScope);
 		}
-		else
+		else if (UnitDetailsWidget.IsValid())
 		{
 			UnitDetailsWidget->SetStructureData(nullptr);
 		}
@@ -624,11 +682,8 @@ void FCRRecoilPatternEditor::OnSelectionChanged() const
 		}
 	}
 
-	if (RecoilUnitSelection.GetNum() <= 1)
+	if (RecoilUnitSelection.GetNum() <= 1 && bEnableUnitScaling && UnitGraphWidget.IsValid())
 	{
-		if (bEnableUnitScaling)
-		{
-			ToolkitCommands->ExecuteAction(FCRRecoilPatternEditorCommands::Get().UnitScaling.ToSharedRef());
-		}
+		UnitGraphWidget->StopUnitScaling();
 	}
 }

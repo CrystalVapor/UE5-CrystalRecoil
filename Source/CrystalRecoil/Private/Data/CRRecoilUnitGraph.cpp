@@ -41,8 +41,6 @@ TArray<FCRRecoilUnit>& UCRRecoilUnitGraph::GetRecoilUnits()
 
 void UCRRecoilUnitGraph::RearrangeUnits()
 {
-	constexpr float PositionTolerance = 0.001f;
-
 	const bool bByY = RearrangePolicy == ECRRecoilUnitGraphRearrangePolicy::AscendByY || RearrangePolicy == ECRRecoilUnitGraphRearrangePolicy::DescendByY;
 	const bool bAscend = RearrangePolicy == ECRRecoilUnitGraphRearrangePolicy::AscendByY || RearrangePolicy == ECRRecoilUnitGraphRearrangePolicy::AscendByX;
 
@@ -51,7 +49,7 @@ void UCRRecoilUnitGraph::RearrangeUnits()
 		const float ValueA = bByY ? A.Position.Y : A.Position.X;
 		const float ValueB = bByY ? B.Position.Y : B.Position.X;
 
-		if (!FMath::IsNearlyEqual(ValueA, ValueB, PositionTolerance))
+		if (ValueA != ValueB)
 		{
 			return bAscend ? ValueA < ValueB : ValueA > ValueB;
 		}
@@ -104,8 +102,6 @@ void UCRRecoilUnitGraph::PostEditChangeProperty(FPropertyChangedEvent& PropertyC
 				NextID = Unit.ID + 1;
 			}
 		}
-
-		RearrangeUnits();
 	}
 }
 #endif

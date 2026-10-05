@@ -11,6 +11,8 @@ class FCRRecoilUnitSelection;
 class UCRRecoilPattern;
 class SCRRecoilUnitGraphBackgroundWidget;
 class FCRRecoilPatternEditor;
+class UTransBuffer;
+struct FTransactionContext;
 
 namespace CrystalRecoilEditor
 {
@@ -47,6 +49,8 @@ public:
 
 	void Construct(const FArguments& InArgs);
 
+	virtual ~SCRRecoilUnitGraphWidget() override;
+
 	void SetRecoilUnitGraph(UCRRecoilUnitGraph* InRecoilUnitGraph);
 
 	// SWidget interface
@@ -64,6 +68,10 @@ public:
 
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override;
 
+	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
+
+	virtual void OnFocusLost(const FFocusEvent& InFocusEvent) override;
+
 	virtual FReply OnKeyUp(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 	// End of SWidget interface
 
@@ -77,23 +85,29 @@ public:
 
 	void DrawSelectionBox(FSlateWindowElementList& OutDrawElements, const FGeometry& AllottedGeometry, const int32 BaseLayerID) const;
 
-	void AddUnitUnderCursor() const;
+	void AddUnitUnderCursor();
 
-	void AddUnit(const FVector2f& RecoilLocation) const;
+	void AddUnit(const FVector2f& RecoilLocation);
 
 	void ZoomToFitAllUnits() const;
 
 	void CopySelectedUnits() const;
 
-	void PasteUnits() const;
+	void PasteUnits();
 
-	void DeleteUnits() const;
+	void DeleteUnits();
+
+	void FinishDragging();
+
+	void CancelDragging();
 
 	void StartUnitScaling();
 
 	void StopUnitScaling();
 
 protected:
+	void OnBeforeUndoRedo(const FTransactionContext& TransactionContext);
+
 	UCRRecoilUnitGraph* GetUnitGraph() const;
 
 	UCRRecoilPattern* GetRecoilPattern() const;
@@ -116,6 +130,10 @@ protected:
 
 	FCRRecoilPatternEditor* RecoilPatternEditor = nullptr;
 
+	TWeakObjectPtr<UTransBuffer> TransactionBuffer;
+
+	FDelegateHandle BeforeUndoRedoHandle;
+
 	TSharedPtr<SCRRecoilUnitGraphBackgroundWidget> BackgroundWidget;
 
 	TSharedPtr<SVerticalBox> ShortcutsContainer;
@@ -130,7 +148,7 @@ protected:
 
 	int32 LastLeftMouseDownFoundUnitID = INDEX_NONE;
 
-	FVector2f CurrentMousePanelPosition;
+	FVector2f CurrentMousePanelPosition = FVector2f::ZeroVector;
 
 	mutable bool bNeedZoomToFit = false;
 };
